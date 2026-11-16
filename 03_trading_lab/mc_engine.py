@@ -136,3 +136,29 @@ def summarize(equity, R):
         "P(drawdown >= 50%) %": 100 * np.mean(dd >= 0.50),
         "Losing streak, median": np.median(longest_losing_streak(R)),
     }
+
+
+def simulate_R_uncertain(edge, paths, trades, rng):
+    """Trade results in R when the edge itself is uncertain.
+
+    ``edge`` is the table of posterior draws from ``bayes_edge.sample_edge``
+    (columns win_rate, avg_win_R, win_sigma, avg_loss_R). Each simulated
+    future picks one row, so each future has its own plausible edge and keeps
+    it for all of its trades.
+
+    The per-future numbers are column vectors of shape (paths, 1). NumPy
+    stretches them across the (paths, trades) matrix; this is broadcasting.
+
+    Returns (R, row_index), where row_index says which draw each future used.
+    """
+    shape = (paths, trades)
+    row = rng.integers(0, len(edge), paths)
+    win_rate = edge["win_rate"].to_numpy()[row][:, None]
+    avg_win = edge["avg_win_R"].to_numpy()[row][:, None]
+    sigma = edge["win_sigma"].to_numpy()[row][:, None]
+    avg_loss = edge["avg_loss_R"].to_numpy()[row][:, None]
+
+    is_win = rng.random(shape) < win_rate
+    mu = np.log(avg_win) - 0.5 * sigma ** 2
+    win_R = np.exp(mu + sigma * rng.standard_normal(shape))
+    return np.where(is_win, win_R, -avg_loss), row
