@@ -68,7 +68,7 @@ The regime gate is closed, so this allocation is an exercise.
 
 ## Limits of this report
 
-- The setup score is untested as a predictor of returns.
+- The setup score was backtested (notebook 07) and did not rank candidates. Treat the candidate list as unordered.
 - The prior on the edge is borrowed from other traders' statistics.
 - Prices are daily closes; entry and stop rules need intraday data.
 - No costs, slippage, earnings dates or news. See `MANUAL.md`, section 6.

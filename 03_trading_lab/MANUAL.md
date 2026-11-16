@@ -1,6 +1,6 @@
 # Linear Algebra Trading Lab — Manual
 
-This manual covers Phases 0 to 6 of the lab: what each part does, how the
+This manual covers Phases 0 to 7 of the lab: what each part does, how the
 engines work, how stocks are selected, what every term and abbreviation
 means, and what the lab leaves out.
 
@@ -41,6 +41,7 @@ The lab answers four questions about that method, in order.
 | Which stocks fit the method today, and which of them are one bet? | 4 |
 | Which two do I take, in what size, and which rule limits me? | 5 |
 | Put together: what do my rules allow today? | 6 |
+| Does the setup score work? | 7 |
 
 Phase 0 teaches the linear algebra the other phases use.
 
@@ -59,14 +60,17 @@ All files sit in the folder `03_trading_lab`.
 | `04_momentum_scanner.ipynb` | notebook | Phase 4: scan, score and group stocks |
 | `05_two_slot_allocator.ipynb` | notebook | Phase 5: pick two positions and their sizes with a linear program |
 | `06_daily_report.ipynb` | notebook | Phase 6: run every phase, one dashboard, one verdict |
+| `07_score_backtest.ipynb` | notebook | Phase 7: backtest of the setup score, filters and regime gate |
 | `mc_engine.py` | module | simulation functions (Phases 1 and 3) |
 | `bayes_edge.py` | module | Bayesian update functions and sizing rule (Phases 2 and 3) |
 | `scanner.py` | module | download, metrics, filters, score, PCA, themes (Phase 4) |
 | `allocator.py` | module | linear program: build, solve, shadow prices, orders (Phase 5) |
 | `daily_report.py` | module | the whole pipeline in one call; also runs from a terminal (Phase 6) |
+| `backtest.py` | module | point-in-time panel, trade simulation, rank correlation, bootstrap (Phase 7) |
 | `lab_style.py` | module | chart colours and matplotlib defaults |
 | `sample_trade_log.csv` | data | 40 made-up trades for practice; not real trades |
 | `data/prices_*.csv` | data | saved price snapshot (close, high, low, volume) |
+| `data/history_*.csv.gz` | data | five years of daily prices for the backtest |
 | `candidates.csv` | output | Phase 4 result, input for Phase 5 |
 | `allocation.csv` | output | Phase 5 result: the order ticket |
 | `reports/daily_report_<date>.md`, `.png` | output | Phase 6 result: written report and dashboard |
@@ -244,6 +248,40 @@ Phase 6 sizes them at the supported risk, which here is 0.3%. At $6 of risk
 one MRNA share is 1.9R, more than the 1R cap, so MRNA cannot be bought and
 the picks change.
 
+### Phase 7 — Backtest of the setup score
+
+Purpose: test four claims the lab had made without proof: the filters pick
+better stocks (H1), a higher score means a better trade (H2), each score
+input points the right way (H3), the regime gate helps (H4).
+
+Inputs: five years of daily prices, the spacing of scan dates, the stop
+distance, and the forward return used for rank correlation.
+
+Steps: build a point-in-time panel; simulate a trade for every row;
+compare groups with bootstrap intervals; rank correlation of the score and
+of each input; robustness checks; verdict.
+
+Outputs: trade statistics, group comparisons with 90% intervals,
+information coefficients, a robustness table and one verdict per hypothesis.
+
+Headline results (15 November 2021 to 13 November 2026, 221 scan dates,
+2,977 trades on stocks that passed the scan, stop 0.5 ADR):
+
+| Hypothesis | Verdict | Evidence |
+|---|---|---|
+| H1 filters pick better stocks | not shown | passed minus not passed +0.05R (−0.19 to +0.28) |
+| H2 higher score, better trade | not shown | high minus low −0.06R (−0.33 to +0.23); IC −0.04, t = −1.6 |
+| H3 score inputs point the right way | not shown | 0 of 4 inputs have the expected sign; none reaches t = 2 |
+| H4 regime gate helps | not shown | open minus closed −0.06R (−0.42 to +0.29) |
+
+The simulated edge is a 27% win rate, a 3.5R average winner and an
+expectancy of +0.21R, against the borrowed 23%, 8R and +1.07R. The +0.21R
+is before survivorship bias, costs and slippage.
+
+Consequence: the allocator's objective and the daily report's ranking rest
+on a score with no demonstrated value. Treat the candidate list as
+unordered. Phases 1 to 3 do not depend on the score.
+
 ---
 
 ## 4. Logic of the engines
@@ -412,6 +450,44 @@ Verdict rules:
 The overall verdict is STOP if any line is STOP, otherwise CAUTION if any
 line is CAUTION, otherwise GO.
 
+### 4.7 Backtest engine (`backtest.py`)
+
+Point-in-time panel (`build_panel`). For each scan date (every 5 trading
+days, after a 130-day warm-up) the price tables are cut at that date and
+passed to the scanner's own `compute_metrics`, `apply_filters` and
+`setup_score`. Nothing after the scan date is visible to the scan. One row
+is kept for every stock that passes the price, liquidity and ADR filters.
+
+Outcomes recorded for each row:
+
+- Forward returns: from the next day's open to the close 5, 10 and 20
+  trading days later.
+- A simulated trade (`simulate_trade`), in R:
+  1. enter at the next day's open;
+  2. stop at entry minus the stop distance (0.5 or 1.0 ADR); a bar that
+     opens below the stop exits at the open (a gap), otherwise at the stop;
+  3. at +3R sell one third and move the stop to the entry price;
+  4. from the third bar, or after the trim, exit the rest on a close below
+     the 9-day EMA;
+  5. exit at the close after 40 bars.
+  When one daily bar touches both the stop and the +3R level, the stop is
+  taken first.
+
+Information coefficient (`rank_ic`). On each scan date, the Spearman rank
+correlation between a signal and an outcome across that date's stocks. The
+summary is the mean over dates, its t-statistic (mean ÷ standard error) and
+the share of dates with a positive value.
+
+Bootstrap by date (`bootstrap_by_date`, `bootstrap_diff`). Whole scan dates
+are resampled with replacement, because trades opened on the same date
+share the same market and are not independent. The 5th and 95th percentiles
+of the resampled statistic form the 90% interval.
+
+Verdict rule. A hypothesis is supported if the 90% interval of the
+difference lies wholly above zero, contradicted if wholly below, and not
+shown otherwise. For H3, an input counts only if its t-statistic reaches 2
+in either direction.
+
 ---
 
 ## 5. How the selection works
@@ -538,11 +614,22 @@ This applies rule B1, "one theme is one bet".
 | Positions already open, trading costs, decisions through time | — | not modelled; one day, from cash |
 | Whole shares, in the shadow prices | prices approximate | moderate on a small account |
 
+### Backtest
+
+| Ignored | Direction | Size of impact |
+|---|---|---|
+| Survivorship: the universe is today's list | results too good | large for levels; smaller for comparisons between groups |
+| Intraday breakout entry and low-of-day stop | either | large; the open-entry stand-in is not your method |
+| Costs, slippage, stop fills worse than the stop | results too good | moderate |
+| Overlap of scan dates and repeated stocks | intervals too narrow | moderate; bootstrap by date reduces it |
+| Portfolio limits (two slots, cash) | — | every candidate is traded |
+| Other market periods | unknown | about four years of scan dates only |
+
 ### Scanner
 
 | Ignored | Direction | Size of impact |
 |---|---|---|
-| Forward test of the score | unknown | the score may have no predictive value |
+| Forward test of the score | done in Phase 7 | no evidence that the score ranks candidates |
 | Whole-market universe | leaders overstated | "top 10% of 180" is much weaker than "top 1–2% of the market" |
 | Hand-picked universe (selection and survivorship bias) | leaders overstated | moderate |
 | Intraday data | entry rules unchecked | low of day, first 30 minutes and 5-minute break are not tested |
@@ -575,12 +662,14 @@ This applies rule B1, "one theme is one bet".
 | Drawdown limit, accepted chance | 30%, 10% | Phase 3 | choice |
 | Price, dollar volume, ADR floors | $5, $20M, 4% | Phase 4 | choice |
 | Momentum rank floor | 90 | Phase 4 | choice |
-| Score weights | 40 / 25 / 15 / 20 | `setup_score` | untested |
+| Score weights | 40 / 25 / 15 / 20 | `setup_score` | tested in Phase 7: no demonstrated value |
 | Theme correlation, lookback | 0.60, 120 days | Phase 4 | choice |
 | Stop distance | 0.5 ADR | Phase 5 | choice |
 | Gap budget | 3% of equity | Phase 5 | choice |
 | Largest extension allowed | 1 ADR above the 10-day MA | Phase 5 | choice |
-| Objective value of a stock | setup score ÷ 100 | `allocator.prepare` | untested |
+| Objective value of a stock | setup score ÷ 100 | `allocator.prepare` | tested in Phase 7: no demonstrated value |
+| Scan spacing, warm-up | 5 days, 130 days | `backtest.py` | choice |
+| Trade rules in the backtest | +3R trim, 9 EMA trail, 40-bar limit | `simulate_trade` | stand-in for your rules |
 
 "Borrowed" means taken from published statistics of other traders.
 "Placeholder" means a guess to be replaced by a measurement. "Choice" means
@@ -601,6 +690,7 @@ outcomes.
 | DD | drawdown |
 | EMA | exponential moving average |
 | ETF | exchange-traded fund |
+| IC | information coefficient |
 | IV | implied volatility |
 | LOD | low of day |
 | LP | linear program |
@@ -710,6 +800,8 @@ posterior ∝ prior × likelihood.
 an unknown win rate. Beta(a, b) behaves like having seen a wins and b
 losses.
 
+**Backtest.** Applying a rule to past data to see how it would have done.
+
 **Bootstrap.** Estimating uncertainty by resampling the data with
 replacement.
 
@@ -736,12 +828,22 @@ distribution predicts.
 **Growth rate (log growth).** The average of log(1 + return). It is what
 compounds in the long run.
 
+**Hypothesis test.** Stating a claim, then checking whether the data could
+plausibly have arisen if the claim were false.
+
+**Information coefficient (IC).** The rank correlation between a signal and
+what happened next, computed across stocks on one date. Zero means no
+information.
+
 **Kelly fraction.** The bet size that maximises long-run growth. Betting
 more lowers growth and raises the risk of ruin. Practitioners use a fraction
 of it.
 
 **Likelihood.** How probable the observed data is, for one candidate value
 of the unknown.
+
+**Look-ahead bias.** Letting a backtest use information that was not
+available on the date of the decision.
 
 **Lognormal.** The distribution of a number whose logarithm is normal.
 Always positive, with a long right tail. Used for winner sizes.
@@ -763,11 +865,23 @@ The 5th percentile is a bad-luck outcome; the 95th is a good-luck one.
 **Prior strength.** How much the prior counts, stated as a number of
 imaginary observations.
 
+**Overfitting.** Tuning a rule until it fits past data, including its
+noise, so that it fails on new data.
+
+**Rank correlation (Spearman).** Correlation computed on ranks, not on raw
+values. It measures whether one ordering agrees with another.
+
 **Seed.** The starting value of the random number generator. The same seed
 gives the same random numbers, so results can be repeated.
 
 **Standard deviation (σ), volatility.** The typical size of deviations from
 the mean.
+
+**Survivorship bias.** Testing only on stocks that still exist or are still
+prominent today, which makes past results look better than they were.
+
+**t-statistic.** An average divided by its standard error. Beyond about ±2
+is the usual threshold for calling a result unlikely to be chance.
 
 **Variance.** Standard deviation squared.
 
@@ -931,6 +1045,18 @@ line per check (regime, edge, risk, allocation).
 
 **Dashboard.** The six-panel figure of the daily report.
 
+**Point-in-time panel.** The backtest's table: one row per scan date and
+stock, built using only data available on that date, with the outcomes
+that followed.
+
+**Scan date.** A date on which the backtest runs the scanner.
+
+**Score group.** Low, mid or high third of the passed stocks by score, on
+one scan date.
+
+**Bootstrap by date.** Resampling whole scan dates, so that trades opened
+on the same day stay together.
+
 **Eligible candidate.** A scan candidate that is not extended beyond the
 allowed distance above its 10-day MA.
 
@@ -986,14 +1112,15 @@ values in memory and gives wrong results.
 | 4 | `04_momentum_scanner` | `data/` snapshot, or a download | `candidates.csv` | only with `REFRESH = True` |
 | 5 | `05_two_slot_allocator` | `candidates.csv` from step 4 | `allocation.csv` | no |
 | 6 | `06_daily_report` | trade log, `data/` snapshot or a download | `reports/…` | only with `refresh = True` |
+| 7 | `07_score_backtest` | `data/history_*.csv.gz`, or a download | nothing | only with `REFRESH = True` |
 
-Notebooks 0 to 3 stand alone and can run in any order. Notebook 5 must run
+Notebooks 0 to 3 and 7 stand alone and can run in any order. Notebook 5 must run
 after notebook 4. Notebook 6 does not need the others to have run: it calls
 the modules itself.
 
 ### 13.4 Two ways to use the lab
 
-To learn: run notebooks 0 to 6 once each, in order, and do the exercises at
+To learn: run notebooks 0 to 7 once each, in order, and do the exercises at
 the end of each.
 
 Each trading day: run only notebook 6 with `refresh = True`, or from a

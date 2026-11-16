@@ -243,7 +243,8 @@ def to_markdown(r):
     add("")
     add("## Limits of this report")
     add("")
-    add("- The setup score is untested as a predictor of returns.")
+    add("- The setup score was backtested (notebook 07) and did not rank candidates. "
+        "Treat the candidate list as unordered.")
     add("- The prior on the edge is borrowed from other traders' statistics.")
     add("- Prices are daily closes; entry and stop rules need intraday data.")
     add("- No costs, slippage, earnings dates or news. See `MANUAL.md`, section 6.")
