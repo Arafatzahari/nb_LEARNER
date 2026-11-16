@@ -12,8 +12,8 @@ algebra. Study material, not financial advice.
 | 1 | `01_monte_carlo_engine.ipynb` — simulate thousands of futures of the rules | done |
 | 2 | `02_bayesian_edge_tracker.ipynb` — win rate, winner size and expectancy from the trade log, with uncertainty | done |
 | 3 | `03_bayesian_monte_carlo.ipynb` — simulate with an uncertain edge, choose the risk per trade | done |
-| 4 | Momentum scanner, covariance matrix, themes by PCA | next |
-| 5 | Two-slot allocator as a linear program | planned |
+| 4 | `04_momentum_scanner.ipynb` — scan US stocks, score setups, covariance, PCA, themes as a graph | done |
+| 5 | Two-slot allocator as a linear program | next |
 | 6 | One daily report joining all phases | planned |
 
 ## Files
@@ -22,6 +22,10 @@ algebra. Study material, not financial advice.
   drawdown, losing streaks, correlated slots through Cholesky).
 - `bayes_edge.py` — the Bayesian update functions and the sizing rule.
 - `sample_trade_log.csv` — 40 made-up trades for practice. Not real trades.
+- `scanner.py` — price download, scan metrics, filters, setup score, PCA and themes.
+- `data/` — saved price snapshot used when no fresh download is requested.
+- `candidates.csv` — Phase 4 output, input for Phase 5.
+- `MANUAL.md` — full manual: structure, engine logic, selection, ignored effects, glossary.
 - `lab_style.py` — shared chart colours and matplotlib defaults.
 - `requirements.txt` — libraries to install.
 
@@ -33,7 +37,7 @@ jupyter notebook
 ```
 
 Open `00_setup_linear_algebra.ipynb`, choose `Kernel ▸ Restart & Run All`,
-then do the same for notebooks 01, 02 and 03. Edit only the cell marked
+then do the same for notebooks 01 to 04. Edit only the cell marked
 `KEY IN HERE`.
 
 ## Assumptions to replace with your own data

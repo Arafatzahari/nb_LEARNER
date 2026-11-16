@@ -1,0 +1,11 @@
+,price,adr_pct,mom_rank,ext_adr,tightness,score,theme,best_in_theme
+MRNA,223.37,10.2,100.0,-0.78,0.7,84.2,solo,True
+CELH,32.42,4.74,95.56,0.53,0.8,77.0,solo,True
+CVNA,72.37,5.12,98.33,-0.24,0.94,76.7,solo,True
+ELF,117.98,4.63,98.89,0.57,0.87,68.8,solo,True
+RUN,8.63,7.48,92.22,-0.58,0.92,63.6,solo,True
+RIOT,17.52,9.35,92.78,0.87,0.82,61.4,T5,True
+DUOL,165.31,5.88,97.78,1.25,1.07,57.5,solo,True
+APP,409.1,5.42,100.0,3.08,1.04,55.5,solo,True
+LUNR,13.0,9.25,91.11,1.8,1.14,39.8,T2,True
+TTD,15.68,5.04,98.89,2.09,1.52,39.1,solo,True
