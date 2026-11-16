@@ -1,6 +1,6 @@
 # Linear Algebra Trading Lab — Manual
 
-This manual covers Phases 0 to 4 of the lab: what each part does, how the
+This manual covers Phases 0 to 5 of the lab: what each part does, how the
 engines work, how stocks are selected, what every term and abbreviation
 means, and what the lab leaves out.
 
@@ -39,10 +39,10 @@ The lab answers four questions about that method, in order.
 | What is my edge, measured from my own trades, and how sure am I? | 2 |
 | Given that uncertainty, how much should I risk per trade? | 3 |
 | Which stocks fit the method today, and which of them are one bet? | 4 |
+| Which two do I take, in what size, and which rule limits me? | 5 |
 
-Phase 0 teaches the linear algebra the other phases use. Phases 5 and 6
-(choosing two positions with a linear program, and one daily report) are
-planned and not built yet.
+Phase 0 teaches the linear algebra the other phases use. Phase 6 (one daily
+report joining all phases) is planned and not built yet.
 
 ---
 
@@ -57,13 +57,16 @@ All files sit in the folder `03_trading_lab`.
 | `02_bayesian_edge_tracker.ipynb` | notebook | Phase 2: estimate the edge from a trade log |
 | `03_bayesian_monte_carlo.ipynb` | notebook | Phase 3: simulate with an uncertain edge, choose risk |
 | `04_momentum_scanner.ipynb` | notebook | Phase 4: scan, score and group stocks |
+| `05_two_slot_allocator.ipynb` | notebook | Phase 5: pick two positions and their sizes with a linear program |
 | `mc_engine.py` | module | simulation functions (Phases 1 and 3) |
 | `bayes_edge.py` | module | Bayesian update functions and sizing rule (Phases 2 and 3) |
 | `scanner.py` | module | download, metrics, filters, score, PCA, themes (Phase 4) |
+| `allocator.py` | module | linear program: build, solve, shadow prices, orders (Phase 5) |
 | `lab_style.py` | module | chart colours and matplotlib defaults |
 | `sample_trade_log.csv` | data | 40 made-up trades for practice; not real trades |
 | `data/prices_*.csv` | data | saved price snapshot (close, high, low, volume) |
 | `candidates.csv` | output | Phase 4 result, input for Phase 5 |
+| `allocation.csv` | output | Phase 5 result: the order ticket |
 | `requirements.txt` | setup | libraries to install |
 | `README.md`, `MANUAL.md` | docs | overview and this manual |
 
@@ -82,7 +85,10 @@ assumed edge ──► Phase 1 (engine) ──► Phase 3 (futures with uncertai
                                               ▼
                                       risk per trade
 
-Yahoo prices ──► Phase 4 (scan, score, themes) ──► candidates.csv ──► Phase 5
+Yahoo prices ──► Phase 4 (scan, score, themes) ──► candidates.csv
+                                                         │
+                                                         ▼
+                              Phase 5 (linear program) ──► allocation.csv
 ```
 
 Each notebook has one cell marked `KEY IN HERE`. Edit only that cell, then
@@ -190,6 +196,27 @@ Headline results on the snapshot to 13 November 2026: regime gate closed;
 180 stocks reduce to 10 candidates; the first principal component explains
 33% of movement; eight themes among 89 high-ADR stocks.
 
+### Phase 5 — Two-slot allocator
+
+Purpose: choose which candidates fill the two slots, and with how many
+shares, by solving a linear program; then measure which rule limits the
+result.
+
+Inputs: `candidates.csv`, account size, risk per trade, stop distance in
+ADR, slot count, gap budget, and the largest extension allowed.
+
+Steps: prepare per-stock numbers; show the program as three arrays; solve;
+draw the feasible region; shadow prices; cost of each rule; stop width and
+risk grid; account size; correlation of the pair; order ticket.
+
+Outputs: the picks with shares, stop prices, cost and risk; the binding
+limits and their shadow prices; `allocation.csv`.
+
+Headline results on the snapshot to 13 November 2026 ($2,000, 1% risk,
+0.5 ADR stops): MRNA 1 share and CVNA 10 shares; 1.50R deployed of 2R; 47%
+of cash used; the gap budget binds and cash does not; the regime gate is
+closed, so the ticket is an exercise.
+
 ---
 
 ## 4. Logic of the engines
@@ -290,6 +317,47 @@ simulated trades, for each risk setting. Its peak is the growth-maximising
 
 Described in section 5.
 
+### 4.5 Allocator engine (`allocator.py`)
+
+Per-stock numbers (`prepare`):
+
+| Number | Formula |
+|---|---|
+| `stop_pct` | stop distance in ADR × ADR% ÷ 100 |
+| `share_R` | price × `stop_pct` ÷ 1R (risk of one share, in R) |
+| `cost_per_R` | 1R ÷ `stop_pct` (dollars of stock per 1R of risk) |
+| `gap_R` | 1 ÷ stop distance in ADR (loss in R, per 1R risked, on a one-ADR gap) |
+| `max_R` | the smaller of 1R and slot cash ÷ `cost_per_R` |
+| `value` | setup score ÷ 100 |
+
+Decision variables, for each candidate i: `s_i`, a whole number of shares,
+and `x_i`, 1 if the stock is picked and 0 if not. The risk in stock i is
+`y_i = share_R_i × s_i`.
+
+Objective: maximise the sum of `value_i × y_i` (score-weighted risk).
+
+Constraints, each one row of the matrix `A` in `A v ≤ b`:
+
+| Row | Inequality | Rule it encodes |
+|---|---|---|
+| slots | Σ x_i ≤ 2 | at most two open positions |
+| cash | Σ price_i × s_i ≤ equity | no leverage |
+| gap | Σ gap_R_i × y_i ≤ gap budget | limit on the loss if every pick opens one ADR lower |
+| theme T | Σ x_i over the theme ≤ 1 | one theme is one bet |
+| link i | y_i − max_R_i × x_i ≤ 0 | no shares unless picked; at most 1R, or the slot's cash cap |
+
+The program is solved with `scipy.optimize.milp` (the HiGHS solver), with
+all variables integer.
+
+Shadow prices (`shadow_prices`): the picks are held fixed and shares are
+allowed to be fractional, which leaves a plain linear program in the risks
+`y`. The solver's dual values are the shadow prices: the gain in objective
+per unit of each limit. A limit with spare room has a shadow price of zero.
+
+Cost of a rule: the program is solved again with that rule removed, and the
+objectives are compared. This handles large changes, where a shadow price
+(valid only for small changes) would mislead.
+
 ---
 
 ## 5. How the selection works
@@ -360,6 +428,16 @@ Candidates are sorted by score. Within each theme only the best-scored
 candidate is flagged `best_in_theme`; each `solo` stock is its own theme.
 This applies rule B1, "one theme is one bet".
 
+### 5.8 From candidates to positions (Phase 5)
+
+1. Drop candidates further than 1 ADR above their 10-day MA (extended).
+2. Solve the program of section 4.5. The optimiser prefers high scores, but
+   a high-scored stock can lose its place when one share is too large a
+   part of 1R, or when its gap loss uses too much of the gap budget.
+3. Check the correlation of the chosen pair (below 0.30 green, 0.30 to 0.60
+   amber, 0.60 or more red).
+4. Read the regime gate. If it is closed, the ticket is an exercise.
+
 ---
 
 ## 6. What the lab ignores, and the likely impact
@@ -395,6 +473,16 @@ This applies rule B1, "one theme is one bet".
 | Correlation of winner sizes between slots | drawdowns too small | small to moderate |
 | Correlation rising in selloffs | drawdowns too small | large in a market break |
 | Deposits and withdrawals | — | not modelled; deposits dominate early growth of a small account |
+
+### Allocator
+
+| Ignored | Direction | Size of impact |
+|---|---|---|
+| The objective is the untested setup score, not expected profit | unknown | large; "optimal" means consistent with the ranking and the rules |
+| Entry at the breakout price, stop at the low of day | sizes differ | moderate; the program uses the snapshot close and a fixed fraction of ADR |
+| Variance of the pair (`wᵀΣw`) | risk understated | small with the theme rule; a quadratic program would handle it |
+| Positions already open, trading costs, decisions through time | — | not modelled; one day, from cash |
+| Whole shares, in the shadow prices | prices approximate | moderate on a small account |
 
 ### Scanner
 
@@ -435,6 +523,10 @@ This applies rule B1, "one theme is one bet".
 | Momentum rank floor | 90 | Phase 4 | choice |
 | Score weights | 40 / 25 / 15 / 20 | `setup_score` | untested |
 | Theme correlation, lookback | 0.60, 120 days | Phase 4 | choice |
+| Stop distance | 0.5 ADR | Phase 5 | choice |
+| Gap budget | 3% of equity | Phase 5 | choice |
+| Largest extension allowed | 1 ADR above the 10-day MA | Phase 5 | choice |
+| Objective value of a stock | setup score ÷ 100 | `allocator.prepare` | untested |
 
 "Borrowed" means taken from published statistics of other traders.
 "Placeholder" means a guess to be replaced by a measurement. "Choice" means
@@ -460,6 +552,7 @@ outcomes.
 | LP | linear program |
 | MA | moving average (simple, unless stated) |
 | MC | Monte Carlo |
+| MILP | mixed-integer linear program |
 | NIG | Normal-Inverse-Gamma (a prior for an unknown mean and variance) |
 | P(…) | probability of … |
 | PB | pullback |
@@ -670,6 +763,33 @@ them by the share of variance they explain.
 
 **Loading.** A stock's weight in a principal component.
 
+**Linear program (LP).** Choosing values for decision variables to maximise
+a linear objective `cᵀv` subject to linear limits `A v ≤ b`.
+
+**Decision variable.** A quantity the optimiser is free to choose (here,
+shares and pick flags).
+
+**Objective.** The quantity being maximised.
+
+**Constraint.** A limit the solution must obey; one row of `A` and one
+entry of `b`.
+
+**Feasible region.** All combinations of the decision variables that obey
+every constraint. For a linear program it is a shape with flat sides, and
+the optimum sits at one of its corners.
+
+**Binding constraint.** A limit that is fully used at the optimum. A limit
+with spare room is slack.
+
+**Shadow price (dual value, marginal value).** The gain in objective from
+relaxing a limit by one unit. Zero for a slack limit.
+
+**Integer program, mixed-integer linear program (MILP).** A linear program
+in which some or all variables must be whole numbers.
+
+**Relaxation.** The same program with the whole-number requirement dropped.
+Its optimum is at least as good as the integer optimum.
+
 **Adjacency matrix.** A square table saying which pairs of nodes in a graph
 are linked. A thresholded correlation matrix is one.
 
@@ -729,6 +849,27 @@ tightness, volume dry-up and extension.
 
 **Watch list.** The scan output while the regime gate is closed.
 
+**Share risk (`share_R`).** The risk of one share, in R. It measures how
+coarse the sizing is: a value of 0.57 means positions come in steps of 0.57R.
+
+**Cost per R (`cost_per_R`).** Dollars of stock that carry 1R of risk:
+1R ÷ stop distance. A tight stop makes it large.
+
+**Risk cap (`max_R`).** The most risk one slot may carry: 1R, or less when
+the slot's cash runs out first.
+
+**Gap budget.** The largest total loss accepted if every open position
+opens one ADR lower, stated in R or as a share of equity.
+
+**Score-weighted risk.** The allocator's objective: the sum over picks of
+setup score ÷ 100 times risk in R.
+
+**Link constraint.** The row that ties shares to the pick flag: no shares
+unless picked, and no more risk than the risk cap.
+
+**Order ticket.** The allocator's output: picks, shares, stop prices, cost
+and risk.
+
 ---
 
 ## 13. How to run and how to use your own data
@@ -754,4 +895,8 @@ the notebook says so and uses the saved snapshot.
 Changing the universe. Edit the `UNIVERSE` list in `scanner.py`.
 
 Changing a rule. Thresholds are in the `KEY IN HERE` cells. Score weights
-are in `setup_score`, and sizing thresholds in `sizing_decision`.
+are in `setup_score`, and sizing thresholds in `sizing_decision`. To add a
+constraint to the allocator, add a row in `build_problem` in `allocator.py`.
+
+Order of work each day. Run notebook 04 (scan), then notebook 05
+(allocation). Notebook 05 reads `candidates.csv` written by notebook 04.

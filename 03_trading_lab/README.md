@@ -13,8 +13,8 @@ algebra. Study material, not financial advice.
 | 2 | `02_bayesian_edge_tracker.ipynb` — win rate, winner size and expectancy from the trade log, with uncertainty | done |
 | 3 | `03_bayesian_monte_carlo.ipynb` — simulate with an uncertain edge, choose the risk per trade | done |
 | 4 | `04_momentum_scanner.ipynb` — scan US stocks, score setups, covariance, PCA, themes as a graph | done |
-| 5 | Two-slot allocator as a linear program | next |
-| 6 | One daily report joining all phases | planned |
+| 5 | `05_two_slot_allocator.ipynb` — pick two positions and sizes with a linear program, shadow prices | done |
+| 6 | One daily report joining all phases | next |
 
 ## Files
 
@@ -23,6 +23,8 @@ algebra. Study material, not financial advice.
 - `bayes_edge.py` — the Bayesian update functions and the sizing rule.
 - `sample_trade_log.csv` — 40 made-up trades for practice. Not real trades.
 - `scanner.py` — price download, scan metrics, filters, setup score, PCA and themes.
+- `allocator.py` — the linear program: build, solve, shadow prices, order table.
+- `allocation.csv` — Phase 5 output: the order ticket.
 - `data/` — saved price snapshot used when no fresh download is requested.
 - `candidates.csv` — Phase 4 output, input for Phase 5.
 - `MANUAL.md` — full manual: structure, engine logic, selection, ignored effects, glossary.
@@ -37,7 +39,7 @@ jupyter notebook
 ```
 
 Open `00_setup_linear_algebra.ipynb`, choose `Kernel ▸ Restart & Run All`,
-then do the same for notebooks 01 to 04. Edit only the cell marked
+then do the same for notebooks 01 to 05. Edit only the cell marked
 `KEY IN HERE`.
 
 ## Assumptions to replace with your own data
