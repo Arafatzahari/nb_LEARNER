@@ -14,7 +14,7 @@ algebra. Study material, not financial advice.
 | 3 | `03_bayesian_monte_carlo.ipynb` — simulate with an uncertain edge, choose the risk per trade | done |
 | 4 | `04_momentum_scanner.ipynb` — scan US stocks, score setups, covariance, PCA, themes as a graph | done |
 | 5 | `05_two_slot_allocator.ipynb` — pick two positions and sizes with a linear program, shadow prices | done |
-| 6 | One daily report joining all phases | next |
+| 6 | `06_daily_report.ipynb` — every phase in one run: verdict, dashboard, written report | done |
 
 ## Files
 
@@ -23,6 +23,8 @@ algebra. Study material, not financial advice.
 - `bayes_edge.py` — the Bayesian update functions and the sizing rule.
 - `sample_trade_log.csv` — 40 made-up trades for practice. Not real trades.
 - `scanner.py` — price download, scan metrics, filters, setup score, PCA and themes.
+- `daily_report.py` — the whole pipeline in one call; also runs from a terminal.
+- `reports/` — saved daily reports (Markdown and dashboard image).
 - `allocator.py` — the linear program: build, solve, shadow prices, order table.
 - `allocation.csv` — Phase 5 output: the order ticket.
 - `data/` — saved price snapshot used when no fresh download is requested.
@@ -39,7 +41,9 @@ jupyter notebook
 ```
 
 Open `00_setup_linear_algebra.ipynb`, choose `Kernel ▸ Restart & Run All`,
-then do the same for notebooks 01 to 05. Edit only the cell marked
+then do the same for notebooks 01 to 06. For daily use, run only
+notebook 06, or `python daily_report.py --refresh` from a terminal. See
+`MANUAL.md`, section 13, for the full run guide. Edit only the cell marked
 `KEY IN HERE`.
 
 ## Assumptions to replace with your own data

@@ -210,3 +210,40 @@ def find_themes(corr, threshold=0.60):
             for ticker in members:
                 labels[ticker] = f"T{number}"
     return labels, graph
+
+
+def run_scan(prices, min_price=5.0, min_dollar_vol_m=20.0, min_adr=4.0,
+             min_mom_rank=90.0, theme_corr=0.60, corr_lookback=120):
+    """Run the whole scan and return its results in one dictionary.
+
+    Keys: ``regime`` (market gate), ``filters`` (every stock with its filter
+    columns), ``counts`` (stocks left after each filter), ``themes`` (theme
+    label of each high-ADR stock) and ``candidates`` (the scored survivors,
+    best first, with their theme).
+    """
+    close = prices["Close"]
+    metrics = compute_metrics(prices)
+    flt = apply_filters(metrics, min_price, min_dollar_vol_m, min_adr, min_mom_rank)
+
+    alive = pd.Series(True, index=flt.index)
+    counts = {"Universe": int(alive.sum())}
+    for label, column in [("Price", "f_price"), ("Liquidity", "f_liquid"),
+                          ("ADR", "f_adr"), ("Leader", "f_leader"),
+                          ("Trend", "f_trend")]:
+        alive &= flt[column]
+        counts[label] = int(alive.sum())
+
+    group = flt[flt["f_price"] & flt["f_liquid"] & flt["f_adr"]].index
+    corr = returns_matrix(close, group, corr_lookback).corr()
+    themes, _ = find_themes(corr, theme_corr)
+
+    cands = flt[flt["passed"]].copy()
+    cands["score"] = setup_score(cands)
+    cands["theme"] = themes.reindex(cands.index).fillna("solo")
+    cands = cands.sort_values("score", ascending=False)
+    key = np.where(cands["theme"] == "solo", cands.index, cands["theme"])
+    cands["best_in_theme"] = ~pd.Series(key, index=cands.index).duplicated()
+
+    return {"regime": market_regime(close, "QQQ"), "filters": flt,
+            "counts": counts, "themes": themes, "candidates": cands,
+            "as_of": close.index[-1].date()}

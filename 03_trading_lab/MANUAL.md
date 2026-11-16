@@ -1,6 +1,6 @@
 # Linear Algebra Trading Lab — Manual
 
-This manual covers Phases 0 to 5 of the lab: what each part does, how the
+This manual covers Phases 0 to 6 of the lab: what each part does, how the
 engines work, how stocks are selected, what every term and abbreviation
 means, and what the lab leaves out.
 
@@ -40,9 +40,9 @@ The lab answers four questions about that method, in order.
 | Given that uncertainty, how much should I risk per trade? | 3 |
 | Which stocks fit the method today, and which of them are one bet? | 4 |
 | Which two do I take, in what size, and which rule limits me? | 5 |
+| Put together: what do my rules allow today? | 6 |
 
-Phase 0 teaches the linear algebra the other phases use. Phase 6 (one daily
-report joining all phases) is planned and not built yet.
+Phase 0 teaches the linear algebra the other phases use.
 
 ---
 
@@ -58,15 +58,18 @@ All files sit in the folder `03_trading_lab`.
 | `03_bayesian_monte_carlo.ipynb` | notebook | Phase 3: simulate with an uncertain edge, choose risk |
 | `04_momentum_scanner.ipynb` | notebook | Phase 4: scan, score and group stocks |
 | `05_two_slot_allocator.ipynb` | notebook | Phase 5: pick two positions and their sizes with a linear program |
+| `06_daily_report.ipynb` | notebook | Phase 6: run every phase, one dashboard, one verdict |
 | `mc_engine.py` | module | simulation functions (Phases 1 and 3) |
 | `bayes_edge.py` | module | Bayesian update functions and sizing rule (Phases 2 and 3) |
 | `scanner.py` | module | download, metrics, filters, score, PCA, themes (Phase 4) |
 | `allocator.py` | module | linear program: build, solve, shadow prices, orders (Phase 5) |
+| `daily_report.py` | module | the whole pipeline in one call; also runs from a terminal (Phase 6) |
 | `lab_style.py` | module | chart colours and matplotlib defaults |
 | `sample_trade_log.csv` | data | 40 made-up trades for practice; not real trades |
 | `data/prices_*.csv` | data | saved price snapshot (close, high, low, volume) |
 | `candidates.csv` | output | Phase 4 result, input for Phase 5 |
 | `allocation.csv` | output | Phase 5 result: the order ticket |
+| `reports/daily_report_<date>.md`, `.png` | output | Phase 6 result: written report and dashboard |
 | `requirements.txt` | setup | libraries to install |
 | `README.md`, `MANUAL.md` | docs | overview and this manual |
 
@@ -217,6 +220,30 @@ Headline results on the snapshot to 13 November 2026 ($2,000, 1% risk,
 of cash used; the gap budget binds and cash does not; the regime gate is
 closed, so the ticket is an exercise.
 
+### Phase 6 — Daily report
+
+Purpose: run every phase in order and state what the rules allow today.
+
+Inputs: account size, trade log, whether to refresh prices, the risk rule,
+stop distance, gap budget, drawdown limit and accepted chance.
+
+Steps: load prices; scan; estimate the edge from the trade log; find the
+supported risk; allocate at that risk; simulate the outlook at that risk;
+write the verdict; draw the dashboard; save the report.
+
+Outputs: a verdict (GO, CAUTION or STOP) with one line per check, a
+six-panel dashboard, a written report, and both saved in `reports/`.
+
+Headline results on the snapshot to 13 November 2026 with the made-up
+sample log: verdict STOP (regime gate closed); P(edge > 0) = 62%; supported
+risk 0.3% per trade ($6); allocation, as an exercise, CELH 7 shares and
+CVNA 3 shares; 40% of futures end below the start.
+
+Note the difference from Phase 5. Phase 5 sizes positions at the 1% rule.
+Phase 6 sizes them at the supported risk, which here is 0.3%. At $6 of risk
+one MRNA share is 1.9R, more than the 1R cap, so MRNA cannot be bought and
+the picks change.
+
 ---
 
 ## 4. Logic of the engines
@@ -357,6 +384,33 @@ per unit of each limit. A limit with spare room has a shadow price of zero.
 Cost of a rule: the program is solved again with that rule removed, and the
 objectives are compared. This handles large changes, where a shadow price
 (valid only for small changes) would mislead.
+
+### 4.6 Daily report engine (`daily_report.py`)
+
+`run(cfg)` calls the other engines in this order:
+
+1. `scanner.load_prices` and `scanner.run_scan`: regime, filters, scores,
+   themes, candidates.
+2. `bayes_edge.sample_edge`: 20,000 draws of the edge from the trade log.
+3. `supported_risk`: simulates uncertain-edge futures once, then finds the
+   three limits of section 4.3 and takes the smallest.
+4. `allocator.allocate`: on the candidates that are not extended, at the
+   supported risk. The gap budget in R is the gap budget as a share of
+   equity divided by the supported risk.
+5. Outlook: the same simulated trades, compounded at the supported risk.
+6. `verdict`: one line per check.
+
+Verdict rules:
+
+| Line | GO | CAUTION | STOP |
+|---|---|---|---|
+| Regime | gate open | — | gate closed |
+| Edge | sizing rule says 1R | sizing rule says 0.5R | sizing rule says pause |
+| Risk | supported risk equals the rule | supported risk is below the rule | supported risk is zero |
+| Allocation | positions sized, gate open | gate closed, or nothing can be sized | no eligible candidate |
+
+The overall verdict is STOP if any line is STOP, otherwise CAUTION if any
+line is CAUTION, otherwise GO.
 
 ---
 
@@ -870,33 +924,132 @@ unless picked, and no more risk than the risk cap.
 **Order ticket.** The allocator's output: picks, shares, stop prices, cost
 and risk.
 
+**Verdict.** The daily report's conclusion: GO, CAUTION or STOP, with one
+line per check (regime, edge, risk, allocation).
+
+**Outlook.** The range of simulated futures at the supported risk.
+
+**Dashboard.** The six-panel figure of the daily report.
+
+**Eligible candidate.** A scan candidate that is not extended beyond the
+allowed distance above its 10-day MA.
+
 ---
 
 ## 13. How to run and how to use your own data
 
-Install, once:
+### 13.1 One-time setup
+
+1. Install Python 3.11 or newer (python.org, or Anaconda).
+2. Put the `03_trading_lab` folder anywhere on your computer. Keep every
+   file in that one folder; the notebooks import the `.py` modules from it.
+3. Open a terminal (Windows: Anaconda Prompt or PowerShell) and go to the
+   folder:
+
+   ```
+   cd path\to\03_trading_lab
+   ```
+
+4. Install the libraries:
+
+   ```
+   pip install -r requirements.txt
+   ```
+
+5. Start Jupyter:
+
+   ```
+   jupyter notebook
+   ```
+
+   A browser page opens and lists the files.
+
+### 13.2 Running a notebook
+
+1. Click the notebook to open it.
+2. Edit only the cell marked `KEY IN HERE`.
+3. Choose `Kernel ▸ Restart & Run All` (in newer Jupyter:
+   `Run ▸ Restart Kernel and Run All Cells`).
+4. Read from the top. Tables and charts appear under each cell.
+
+Always run the whole notebook. Running single cells out of order leaves old
+values in memory and gives wrong results.
+
+### 13.3 Order, inputs and outputs
+
+| Step | Notebook | Needs | Writes | Internet |
+|---|---|---|---|---|
+| 0 | `00_setup_linear_algebra` | nothing | nothing | no |
+| 1 | `01_monte_carlo_engine` | nothing | nothing | no |
+| 2 | `02_bayesian_edge_tracker` | a trade log CSV | nothing | no |
+| 3 | `03_bayesian_monte_carlo` | the same trade log | nothing | no |
+| 4 | `04_momentum_scanner` | `data/` snapshot, or a download | `candidates.csv` | only with `REFRESH = True` |
+| 5 | `05_two_slot_allocator` | `candidates.csv` from step 4 | `allocation.csv` | no |
+| 6 | `06_daily_report` | trade log, `data/` snapshot or a download | `reports/…` | only with `refresh = True` |
+
+Notebooks 0 to 3 stand alone and can run in any order. Notebook 5 must run
+after notebook 4. Notebook 6 does not need the others to have run: it calls
+the modules itself.
+
+### 13.4 Two ways to use the lab
+
+To learn: run notebooks 0 to 6 once each, in order, and do the exercises at
+the end of each.
+
+Each trading day: run only notebook 6 with `refresh = True`, or from a
+terminal:
 
 ```
-pip install -r requirements.txt
+python daily_report.py --refresh
+python daily_report.py --refresh --equity 2000 --log my_trades.csv
 ```
 
-Start Jupyter in the `03_trading_lab` folder and run the notebooks in order,
-each with `Kernel ▸ Restart & Run All`.
+Open notebooks 4 and 5 when you want the detail behind the scan or the
+allocation.
 
-Your trade log (Phases 2 and 3). Make a CSV with one row per closed trade,
-oldest first, and either a column `R`, or the columns `pnl` and
-`risk_dollars`. Set `TRADE_LOG` in the `KEY IN HERE` cell to its name.
-Include every trade, losers above all.
+### 13.5 Your own data
 
-Fresh prices (Phase 4). Set `REFRESH = True`. This needs internet access to
-Yahoo Finance and overwrites the snapshot in `data/`. If the download fails
-the notebook says so and uses the saved snapshot.
+Your trade log (notebooks 2, 3 and 6). Make a CSV with one row per closed
+trade, oldest first, and either a column `R`, or the columns `pnl` and
+`risk_dollars`. Example:
 
-Changing the universe. Edit the `UNIVERSE` list in `scanner.py`.
+```
+date,ticker,R
+2026-06-01,ABCD,-1.0
+2026-06-03,EFGH,4.2
+```
 
-Changing a rule. Thresholds are in the `KEY IN HERE` cells. Score weights
-are in `setup_score`, and sizing thresholds in `sizing_decision`. To add a
-constraint to the allocator, add a row in `build_problem` in `allocator.py`.
+Save it in the lab folder and put its name in `TRADE_LOG` (notebooks 2 and
+3) or `trade_log` (notebook 6). Include every trade, losers above all.
 
-Order of work each day. Run notebook 04 (scan), then notebook 05
-(allocation). Notebook 05 reads `candidates.csv` written by notebook 04.
+Fresh prices (notebooks 4 and 6). Set `REFRESH = True` (notebook 4) or
+`refresh = True` (notebook 6). This needs internet access to Yahoo Finance
+and overwrites the snapshot in `data/`. If the download fails, the notebook
+says so and uses the saved snapshot.
+
+Your account. Set the equity and the risk rule in the `KEY IN HERE` cells.
+
+### 13.6 Changing the lab
+
+- Universe: edit the `UNIVERSE` list in `scanner.py`.
+- Scan thresholds: the `KEY IN HERE` cell of notebook 4, or the arguments of
+  `run_scan` in `scanner.py` (used by the daily report).
+- Score weights: `setup_score` in `scanner.py`.
+- Sizing thresholds: `sizing_decision` in `bayes_edge.py`.
+- A new allocator constraint: add a row in `build_problem` in `allocator.py`.
+- Daily report defaults: the `Config` class in `daily_report.py`.
+
+After editing a `.py` module, restart the notebook kernel so the change is
+loaded.
+
+### 13.7 Common problems
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'mc_engine'` | Jupyter was started in another folder, or files were separated | start Jupyter inside `03_trading_lab`; keep all files together |
+| `ModuleNotFoundError: No module named 'yfinance'` (or another library) | libraries not installed | `pip install -r requirements.txt` |
+| `FileNotFoundError: candidates.csv` | notebook 5 run before notebook 4 | run notebook 4 first |
+| "Download failed … using the saved snapshot" | no internet, or Yahoo is blocked | check the connection; the snapshot still works |
+| `ValueError: Trade log needs a column 'R' …` | the log has other column names | rename the columns as in 13.5 |
+| A changed `.py` file has no effect | the kernel still holds the old module | `Kernel ▸ Restart & Run All` |
+| Numbers differ slightly from this manual | prices were refreshed, or inputs changed | expected |
